@@ -1,0 +1,54 @@
+# HunterX containerized monitoring.
+#
+#   docker compose build
+#   docker compose run --rm hunterx doctor
+#   docker compose run --rm hunterx init
+#   HUNTERX_TARGET="*.example.com" docker compose up scan      # one-shot run (target is required; CLI refuses an empty one)
+#   docker compose up -d scheduler                            # long-running (config.yaml scan.mode + schedule.*)
+#
+# The long-running scheduler reads target + cron expressions from config/config.yaml.
+
+services:
+  hunterx:
+    build: .
+    image: hunterx:latest
+    environment:
+      HUNTERX_BASE: /app
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}   # optional: enables the AI triage phase
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./log:/app/log
+      - ./wordlists:/app/wordlists
+    stdin_open: true
+    tty: true
+
+  scan:
+    image: hunterx:latest
+    profiles: ["manual"]
+    environment:
+      HUNTERX_BASE: /app
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./log:/app/log
+      - ./wordlists:/app/wordlists
+    command: ["scan", "--profile", "${HUNTERX_PROFILE:-safe}", "--target", "${HUNTERX_TARGET:-}"]
+
+  scheduler:
+    image: hunterx:latest
+    container_name: hunterx-scheduler
+    restart: unless-stopped
+    environment:
+      HUNTERX_BASE: /app
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./log:/app/log
+      - ./wordlists:/app/wordlists
+    command: ["schedule"]
