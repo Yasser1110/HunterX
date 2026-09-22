@@ -1,0 +1,30 @@
+{
+  "report": "hunterx",
+  "version": "0.2.0",
+  "generated_at": "2026-09-21T16:51:39+00:00",
+  "run_id": "RUN-2026-09-21-011",
+  "target": "127.0.0.1",
+  "profile": "balanced",
+  "status": "finished",
+  "counts": {
+    "total": 0,
+    "by_severity": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    },
+    "objects": {
+      "assets": 2,
+      "urls": 0,
+      "ports": 1,
+      "technologies": 0,
+      "parameters": 0,
+      "findings": 0,
+      "cves": 0
+    }
+  },
+  "deltas": [],
+  "findings": []
+}

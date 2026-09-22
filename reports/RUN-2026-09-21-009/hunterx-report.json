@@ -1,0 +1,30 @@
+{
+  "report": "hunterx",
+  "version": "0.2.0",
+  "generated_at": "2026-09-21T16:41:18+00:00",
+  "run_id": "RUN-2026-09-21-009",
+  "target": "*.crypto.com",
+  "profile": "safe",
+  "status": "running",
+  "counts": {
+    "total": 0,
+    "by_severity": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    },
+    "objects": {
+      "assets": 1,
+      "urls": 0,
+      "ports": 0,
+      "technologies": 0,
+      "parameters": 0,
+      "findings": 0,
+      "cves": 0
+    }
+  },
+  "deltas": [],
+  "findings": []
+}
