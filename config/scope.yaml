@@ -1,0 +1,17 @@
+# Optional scope overlay. Merged on top of the `scope:` section in config.yaml.
+# Exclusions always win over inclusions.
+
+scope:
+  include:
+    - "*.example.com"
+
+  exclude:
+    - "admin.example.com"
+    - "staging.example.com"
+
+  excluded_paths:
+    - "/logout"
+    - "/delete"
+
+  excluded_ips:
+    - "192.0.2.0/24"

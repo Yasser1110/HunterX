@@ -1,0 +1,15 @@
+# Wordlist registry. Add your own; paths are resolved relative to base_dir.
+
+tiers:
+  small: wordlists/common.txt
+  medium: wordlists/raft-medium.txt
+  large: wordlists/raft-large.txt
+
+payloads:
+  api: wordlists/api.txt
+  graphql: wordlists/graphql.txt
+  backup: wordlists/backup.txt
+  sensitive: wordlists/sensitive.txt
+
+parameters: wordlists/parameters.txt
+extensions: [php, asp, aspx, jsp, json, xml, bak, old, zip]

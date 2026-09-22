@@ -1,0 +1,86 @@
+# HunterX configuration
+# Change `target.domain` to your authorized scope and run `hunterx scan`.
+
+target:
+  domain: crypto.com
+  wildcard: "*.crypto.com"
+
+scope:
+  include:
+    - "*.crypto.com"
+    - "api.crypto.com"
+
+  exclude:
+    - "admin.example.com"
+    - "staging.example.com"
+
+  excluded_paths:
+    - "/logout"
+    - "/delete"
+
+  excluded_ips: []
+
+  allow_subdomains: true
+  allow_apex: true
+  allow_related_domains: false
+  allow_external_redirects: false
+  never_bypass_exclusions: true
+
+scan:
+  mode: balanced      # passive | safe | balanced | deep
+
+  concurrency:
+    dns: 30
+    http: 20
+    fuzzing: 10
+    nuclei: 10
+    workers: 10
+
+  rate_limit:
+    requests_per_second: 5
+
+  timeout:
+    connect: 5
+    read: 10
+
+  retries: 2
+
+nuclei:
+  enabled: true
+  update_templates: true
+  severities: [info, low, medium, high, critical]
+  tags: [exposure, misconfig, cve]
+  aggressive: false   # keep false unless you explicitly authorize deeper checks
+
+schedule:
+  asset_scan: "0 0 * * *"
+  cve_scan: "0 */6 * * *"
+  deep_scan: "0 3 * * 0"
+
+notifications:
+  enabled: false
+  discord_webhook: null
+  webhook_url: null
+  email:
+    smtp_host: null
+    from: null
+    to: []
+  cooldown_hours: 6
+
+reporting:
+  directory: reports/latest
+  formats: [html, md, json, csv]
+  include_evidence: true
+
+tools:
+  install_dir: ~/hunterx-tools
+  required: [curl, git]
+  optional: [subfinder, amass, assetfinder, dnsx, dig, httpx, naabu, nmap, katana, gau, waybackurls, ffuf, feroxbuster, gobuster, nuclei]
+
+wordlists:
+  base_dir: wordlists
+  tiers:
+    small: wordlists/common.txt
+    medium: wordlists/raft-medium.txt
+    large: wordlists/raft-large.txt
+  extensions: [php, asp, aspx, jsp, json, xml, bak, old, zip]
