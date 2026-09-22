@@ -2,13 +2,13 @@
 # Change `target.domain` to your authorized scope and run `hunterx scan`.
 
 target:
-  domain: crypto.com
-  wildcard: "*.crypto.com"
+  domain: examlpe.com
+  wildcard: "*.example.com"
 
 scope:
   include:
-    - "*.crypto.com"
-    - "api.crypto.com"
+    - "*.examlpe.com"
+    - "api.examlpe.com"
 
   exclude:
     - "admin.example.com"
