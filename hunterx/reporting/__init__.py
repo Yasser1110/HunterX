@@ -1,0 +1,1 @@
+"""Reporting package: JSON/Markdown/CSV/HTML renderers + dashboard + builder."""
