@@ -1,0 +1,14 @@
+php
+asp
+aspx
+jsp
+json
+xml
+bak
+old
+zip
+admin
+Admin
+login
+json
+s
