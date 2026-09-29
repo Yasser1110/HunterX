@@ -1,0 +1,117 @@
+name: HunterX scheduled scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Authorized target (overrides repo variable)"
+        required: false
+        default: ""
+      profile:
+        description: "Scan profile"
+        required: false
+        default: "safe"
+      notify:
+        description: "Send notification"
+        required: false
+        default: "true"
+  schedule:
+    # Daily asset scan at 00:05 UTC (override in repo settings if needed)
+    - cron: "5 0 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  hunterx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      HUNTERX_TARGET: ${{ inputs.target || vars.HUNTERX_TARGET }}
+      HUNTERX_PROFILE: ${{ inputs.profile }}
+      HUNTERX_NOTIFY: ${{ inputs.notify }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install HunterX
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Init project (config mount)
+        run: hunterx init
+
+      - name: Override target
+        if: env.HUNTERX_TARGET != ''
+        run: |
+          python - <<'PY'
+          import yaml, pathlib
+          p = pathlib.Path("config/config.yaml")
+          cfg = yaml.safe_load(p.read_text())
+          t = __import__("os").environ["HUNTERX_TARGET"]
+          if t.startswith("*."):
+              cfg["target"] = {"wildcard": t, "domain": t[2:]}
+          else:
+              cfg["target"] = {"wildcard": None, "domain": t}
+          p.write_text(yaml.safe_dump(cfg))
+          PY
+
+      - name: Doctor
+        run: hunterx doctor
+
+      - name: Scan
+        run: hunterx scan --profile "$HUNTERX_PROFILE" "$([ -n "$HUNTERX_TARGET" ] && echo --target "$HUNTERX_TARGET")"
+
+      - name: Post-run summary
+        if: always()
+        env:
+          HUNTERX_TARGET: ${{ env.HUNTERX_TARGET }}
+        run: |
+          {
+            echo "## HunterX scan summary"
+            echo "- Target: $HUNTERX_TARGET"
+            python - <<'PY'
+          import pathlib, json
+          js = sorted(pathlib.Path("reports").glob("*/*.json"))
+          if not js:
+              print("- no reports produced")
+              raise SystemExit(0)
+          d = json.loads(js[-1].read_text())
+          print(f"- status: {d.get('status','?')}")
+          print("- severity:", d.get("counts", {}).get("by_severity"))
+          print("- deltas:", d.get("deltas", {}))
+          PY
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify (optional webhook)
+        if: always() && env.HUNTERX_NOTIFY == 'true' && env.HUNTERX_WEBHOOK != ''
+        env:
+          HUNTERX_WEBHOOK: ${{ secrets.HUNTERX_WEBHOOK }}
+        run: |
+          python - <<'PY' > /tmp/payload.json
+          import pathlib, json
+          js = sorted(pathlib.Path("reports").glob("*/*.json"))
+          d = json.loads(js[-1].read_text()) if js else {}
+          print(json.dumps({
+              "text": f"HunterX scan finished: {d.get('status','?')} "
+                      f"severity={d.get('counts',{}).get('by_severity',{})} "
+                      f"deltas={d.get('deltas',{})} target={d.get('target')}"
+          }))
+          PY
+          curl -sf -X POST -H "Content-Type: application/json" \
+            -d @/tmp/payload.json "$HUNTERX_WEBHOOK" || echo "notify skipped"
+
+      - name: Upload reports artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hunterx-reports
+          path: reports/
+          retention-days: 14

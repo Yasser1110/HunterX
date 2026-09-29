@@ -1,0 +1,348 @@
+=============================================================================
+ HunterX — How to use it on YOUR machine
+=============================================================================
+
+ Authorized attack-surface monitoring & bug-hunting research framework.
+ Phases 1–11 are implemented and covered by an automated test suite
+ (69 tests passing).
+
+ >>> AUTHORIZATION <<<
+ This tool is for assets you are EXPLICITLY allowed to test: bug-bounty
+ programs, your own infrastructure, or written-permission targets. Every
+ active module is gated by a scope engine, but the scope you configure is
+ YOUR responsibility. HunterX never claims a confirmed takeover/exploitation:
+ anything uncertain is marked POTENTIAL and requires manual verification.
+
+=============================================================================
+ 0. QUICK ANSWERS
+=============================================================================
+
+ - Is it shared on GitHub?  NO (yet). The code currently lives only in this
+   folder (/home/yassr/hunterx on the build machine). The repository already
+   contains ready-to-use CI files (see section 4) so you can publish it in
+   a few git commands and turn on scheduled scans immediately.
+ - Docker Desktop or terminal? EITHER works. Use Docker Desktop for a
+   self-contained environment (recommended if you are not on Linux), or the
+   terminal if you are on Linux/macOS and want recon binaries installed
+   locally. On Windows, use Docker Desktop (or WSL2 + the terminal steps).
+ - Fastest way to run a scan? `hunterx run` (interactive): it asks you for
+   the target, then lets you pick profile + which scans to launch.
+
+=============================================================================
+ 1. WHAT HUNTERX DOES (one-paragraph mental model)
+=============================================================================
+
+ Point it at a wildcard scope (e.g. *.example.com) and it runs a resumable
+ pipeline:
+
+   scope validation -> subdomain discovery -> DNS -> HTTP probing -> ports
+   -> technology fingerprinting -> URL discovery + crawling -> JS analysis
+   -> parameters -> fuzzing -> scanners (headers/CORS/redirects/exposures +
+   optional nuclei) -> CVE correlation -> dedup -> evidence ->
+   prioritization -> AI triage (optional) -> reporting -> notification
+
+ Everything is stored in one SQLite database (data/hunterx.db) and reports
+ are written as JSON / Markdown / CSV / HTML + a dashboard. Run-to-run
+ deltas are computed so you can monitor the surface over time.
+
+=============================================================================
+ 2. TERMINAL (Linux / macOS / WSL2)
+=============================================================================
+
+ Prerequisites: Python 3.12+, git, curl. Optional but recommended for full
+ features: the recon tools installed by install.sh (see step 2).
+
+ (1) Get the code onto your machine.
+     If you have this folder, copy it. Otherwise clone it once published on
+     GitHub (section 4):
+        git clone <your-repo-url>
+        cd hunterx
+
+ (2) Install (one command):
+        ./install.sh
+     This creates .venv and installs the package with dev extras.
+
+     Optional: install the recon binaries (subfinder, httpx, naabu, nuclei,
+     katana, gau, ffuf, ...) downloaded from their official GitHub releases:
+        ./install.sh --tools
+     Then add them to PATH when you want them used:
+        export PATH="$PATH:$HOME/hunterx-tools"
+     (Skip this if you prefer the pure-Python/missing-tool fallbacks —
+     missing tools are warnings, never fatal.)
+
+ (3) Create the project skeleton (config file + wordlists):
+        .venv/bin/hunterx init
+
+ 3) THE EASY ROUTE — no flags, no config editing for the target. Just run:
+        .venv/bin/hunterx run
+     It asks for the target (e.g. crypto.com or *.crypto.com), the scan
+     profile (passive/safe/balanced/deep), which of 7 scan bundles to run,
+     the fuzz wordlist, and whether to send notifications — then prints the
+     plan, runs it, and offers to open the report. Plain `hunterx` (no
+     command) does the same thing.
+
+ (4) The classic route — edit config/config.yaml first:
+     Open config/config.yaml (the file `init` tells you about) and change:
+        target:
+          domain: example.com
+          wildcard: "*.example.com"
+     plus scope.include / scope.exclude / excluded_paths / excluded_ips as
+     needed. Exclusions ALWAYS win. This single file drives everything.
+
+ (5) Verify the environment:
+        .venv/bin/hunterx doctor
+     Check: python ok, tools ok (warnings fine), config ok, database
+     schema v3 ok, wordlists ok.
+
+ (6) Scan:
+        .venv/bin/hunterx scan --target "*.example.com" --profile safe
+     Profiles: passive (nothing touches targets) | safe | balanced | deep.
+
+     Useful follow-ups:
+        .venv/bin/hunterx resume RUN-xxx        # per-phase status of a run
+        .venv/bin/hunterx scan --resume RUN-xxx # continue an unfinished run
+        .venv/bin/hunterx scan --phase http     # run one phase only
+        .venv/bin/hunterx report                # render latest run's reports
+        .venv/bin/hunterx dashboard             # write reports/dashboard.html
+        .venv/bin/hunterx schedule --once       # run currently-due schedules
+        .venv/bin/hunterx schedule              # long-running cron loop
+        .venv/bin/hunterx intel update|diff     # CVE/KEV intelligence + deltas
+        .venv/bin/hunterx stop                  # graceful stop of a running scan
+
+ (7) Outputs:
+        data/hunterx.db              SQLite database (findings, assets, ...)
+        reports/<RUN-ID>/            hunterx-report.{json,md,csv,html}
+        reports/dashboard.html       single-page dashboard
+        log/hunterx.log              logs
+
+=============================================================================
+ 3. DOCKER DESKTOP (macOS / Windows / Linux)
+=============================================================================
+
+ Prerequisites: Docker Desktop installed and started.
+
+ (1) The folder already contains Dockerfile + docker-compose.yml +
+     .dockerignore. In a terminal inside the project folder:
+        cd hunterx
+        docker compose build
+
+ (2) Generate the config skeleton (creates config/, data/, reports/, log/,
+     wordlists/ in the project folder on your host):
+        docker compose run --rm hunterx init
+     (volumes mount ./config, ./data, ./reports, ./log, ./wordlists into
+     the container at /app/..., so your files persist on the host)
+
+ (3) Edit config/config.yaml (host side, any editor):
+        target:
+          domain: example.com
+          wildcard: "*.example.com"
+     Set scope include/exclude too.
+
+ (4) Health check:
+        docker compose run --rm hunterx doctor
+
+ (5a) One-shot scan (target from config.yaml):
+        docker compose run --rm hunterx scan --profile safe
+     Or override the target via env on the 'scan' service:
+        HUNTERX_TARGET="*.example.com" docker compose up scan
+     (an empty/unknown target is refused by the CLI)
+
+ (5b) Continuous monitoring (long-running scheduler; obeys the cron
+     expressions in config/config.yaml -> schedule.asset_scan/cve_scan/
+     deep_scan):
+        docker compose up -d scheduler
+     Stop it with:
+        docker compose stop scheduler
+
+ (6) Optional: enable the AI triage phase inside the container by passing an
+     API key (an OpenAI-compatible endpoint):
+        OPENAI_API_KEY=sk-... docker compose run --rm hunterx scan --profile safe
+     (Set ai.enabled: true in config/config.yaml first.)
+
+ (7) Reports are written into ./reports on your host, DB into ./data.
+
+ --- DOCKER DESKTOP GUI (no terminal needed) ---------------------------------
+
+ The steps above already use Docker Desktop as their engine, but you can also
+ drive it purely from the GUI:
+
+ (a) Open Docker Desktop -> "Images" -> find the local image "hunterx" (tag
+     "latest") -> click the PLAY button next to it.
+
+ (b) In the "Run a new container" dialog:
+       Ports:                    none needed (scanner makes outbound requests)
+       VOLUMES:                  click "+" and add host -> container bind
+                                 mounts so results persist on your machine:
+           config  ./hunterx/config   -> /app/config
+           data    ./hunterx/data     -> /app/data
+           reports ./hunterx/reports  -> /app/reports
+           (wordlists: NOT required if base_dir points at your SecLists copy)
+       ENV: you can add OPENAI_API_KEY for AI triage (only if you enable
+            ai.enabled in config/config.yaml) and HUNTERX_TARGET if you want
+            to override the target for this container.
+     Click "Run".
+
+ (c) The container runs `hunterx` as its entrypoint, so pass a command in the
+     GUI's container Settings -> "Command":  scan --profile safe
+     (Other one-offs: doctor | init | report --run RUN-... ). The output
+     stream is visible in Docker Desktop -> "Containers" -> your container ->
+     "Logs". Config/scope edits should still be made on the host in
+     ./hunterx/config/config.yaml, because the volume shares the same file.
+
+ (d) For continuous monitoring, one container stays running the long-lived
+     scheduler command:
+       Command:    schedule
+       (create another container with the same image + volumes if you already
+       ran a one-shot one above)
+
+ TIP: bind mounts must point at a folder Docker Desktop is allowed to share.
+ C:\Users\..., ~/... and your project folder under your home directory work
+ by default; anything under /tmp or /var needs adding in Docker Desktop ->
+ Settings -> Resources -> File sharing.
+
+ NOTE: the scheduler ONLY runs against the scope configured in
+ config/config.yaml. The GitHub Actions scheduler (section 4) reads either
+ that file or the HUNTERX_TARGET repository variable.
+
+=============================================================================
+ 4. PUBLISHING TO GITHUB (so it's "shared" / monitored in the cloud)
+=============================================================================
+
+ Not shared yet — you decide. The repo already ships:
+   .github/workflows/hunterx.yml  -> scheduled + manual scans (cron "5 0 * * *"
+                                      UTC), artifact upload, job-page summary,
+                                      optional webhook notify.
+   .github/workflows/ci.yml       -> lint + pytest on every push/PR.
+
+ To publish:
+
+ (1) Enable git in the folder and make a first commit:
+        git init
+        git add .
+        git commit -m "HunterX: phases 1-11, Docker, CI, install script"
+
+     SECURITY CHECK before committing: .gitignore already excludes .venv,
+     data/, reports/, log/, config/, *.db, .stop — so your scope config and
+     scan results stay local. Double check with `git status` if in doubt.
+
+ (2) Create a repository on github.com (Public or Private) — do NOT tick
+     "Initialize with README" since one already exists.
+
+ (3) Link and push:
+        git remote add origin git@github.com:<you>/<repo>.git
+        git branch -M main
+        git push -u origin main
+
+ (4) Optional but recommended: copy an example of the config so CI smoke
+     tests can run. The workflows call `hunterx init` which creates one, so
+     nothing extra is required.
+
+ (5) Configure the scan scope + notifications on GitHub (web UI):
+     Settings -> Secrets and variables -> Actions
+       Variables : HUNTERX_TARGET   = your authorized scope, e.g. *.example.com
+                   HUNTERX_PROFILE  = safe (or balanced/deep/passive)
+       Secrets   : HUNTERX_WEBHOOK  = URL if you want the "Notify" step to
+                                      POST a summary after each scan
+     (A webhook can point at your own Slack/Discord-style bridge.)
+
+ (6) Run it:
+       - The scheduled job runs automatically ~00:05 UTC daily (adjust the
+         cron line in hunterx.yml if you want a different cadence).
+       - You can also trigger manually: Actions tab -> "HunterX scheduled
+         scan" -> Run workflow -> optionally set target/profile for that run.
+       - Every push of code runs the CI tests.
+     Reports are downloadable as the "hunterx-reports" artifact; a severity
+     + delta summary is written to the job's Summary page.
+
+ TIP: Scheduled workflows only fire on the default branch (main) and need
+ you to have pushed at least once. cron expressions are in UTC.
+
+=============================================================================
+ 5. CONFIG QUICK REFERENCE (config/config.yaml)
+=============================================================================
+
+ target / scope      the ONLY decisions that matter for safety
+ scan.mode           passive | safe | balanced | deep
+ scan.rate_limit     requests_per_second
+ http.ports          which ports to probe (default 80,443)
+ http.crawl          enabled, max_pages, max_depth
+ ports.enabled       port scanning (needs naabu or fallback)
+ nuclei.enabled      fire nuclei templates against stored URLs
+ intel.fetch_kev/nvd CVE intel (KEV list + NVD)
+ ai.enabled + OPENAI_API_KEY env  -> Phase 11 AI triage notes
+ notifications.channels.webhook/discord  -> post findings after a run
+ schedule.asset_scan / cve_scan / deep_scan  -> cron used by `schedule`
+ reporting.formats  html, md, json, csv
+
+  WORDLISTS (content discovery):
+   wordlists.base_dir   where tiers are looked up. Default template is
+                        ~/Documents/SecLists — i.e. your own copy. Absolute
+                        paths and ~ are fine; relative ones are resolved
+                        against the project folder.
+   wordlists.tiers      small / medium / large. Each value is a relative
+                        path under base_dir (e.g.
+                        Discovery/Web-Content/raft-medium-directories.txt)
+                        OR a bare filename — if it doesn't sit directly in
+                        base_dir the tool searches a few levels deep, so you
+                        can pick ANY file from SecLists by name
+                        (e.g. common.txt, raft-large-directories.txt,
+                        php-dictionary.txt).
+   hunterx fuzz -w FILE   one-shot discovery with a specific wordlist
+                        (path, relative path, or any filename under base_dir).
+   `hunterx doctor` only warns about tiers that resolve to nothing.
+
+=============================================================================
+ 6. TROUBLESHOOTING
+=============================================================================
+
+ - `hunterx doctor` shows many "missing: optional tool" warnings
+       -> fine. Pipeline skips only what isn't installed. Install all of
+          them with: ./install.sh --tools
+ - Scan finished but 0 findings
+       -> Your lab/target must be reachable on one of configured http.ports,
+          and the target host must be inside scope (the apex is seeded
+          automatically). Check config http.ports + log/hunterx.log.
+ - Everything curates correctly but notifications don't fire
+       -> notifications.enabled is false by default; set it + give a URL,
+          or use the GitHub Actions webhook step with HUNTERX_WEBHOOK.
+ - AI triage phase does nothing
+       -> ai.enabled: true is required AND an OPENAI_API_KEY env var.
+          A failure here is always a graceful skip, never a crashed scan.
+ - Docker: "config.yaml ok" but scope wrong
+       -> remember config is mounted from ./config on your host; edit the
+          host file and re-run, no rebuild needed.
+ - Need to start clean
+       -> .venv/bin/hunterx clean --all --yes   (deletes data/reports/log)
+          docker compose run --rm hunterx clean --all --yes  (Docker)
+ - Tool downloads fail in install.sh
+       -> needs internet access to api.github.com / github releases. In an
+          offline environment, add official release binaries to PATH by hand.
+ - Docker Desktop: "mounts denied: the path ... is not shared"
+       -> the project folder must be inside a path Docker Desktop shares
+          (e.g. under your home directory, or add it in Docker Desktop ->
+          Settings -> Resources -> File sharing). This is a Docker Desktop
+          setting on macOS/Windows; on Linux it is ~/.docker or your distro's
+          docker rootless config.
+
+=============================================================================
+ 7. ONE-LINE CHEAT SHEET
+=============================================================================
+
+ # terminal
+ ./install.sh && .venv/bin/hunterx init
+ # edit config/config.yaml scope, then:
+ .venv/bin/hunterx doctor
+ .venv/bin/hunterx scan --target "*.example.com" --profile safe
+ .venv/bin/hunterx report && .venv/bin/hunterx dashboard
+
+ # docker desktop
+ docker compose build
+ docker compose run --rm hunterx init
+ docker compose run --rm hunterx scan --profile safe
+ docker compose up -d scheduler
+
+ # publish to github
+ git init && git add . && git commit -m "hunterx"
+ git remote add origin <url> && git push -u origin main
+ # then set the HUNTERX_TARGET variable in repo Actions settings
+=============================================================================
